@@ -1,0 +1,3 @@
+streamlit
+tuya-connector-python
+requests
