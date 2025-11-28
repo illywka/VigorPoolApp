@@ -32,10 +32,12 @@ def get_vigor_state(api_result):
     s['battery'] = next((i['value'] for i in api_result if i['code'] == 'battery_percentage'), 0)
     s['temp'] = next((i['value'] for i in api_result if i['code'] == 'temp_current'), 0)
     s['fast_mode'] = next((i['value'] for i in api_result if i['code'] == 'pd_switch_1'), False)
+    #s['test'] =  next((i['value'] for i in api_result if i['code'] == 'link_mode'), 0)
 
     c_data = next((i['value'] for i in api_result if i['code'] == 'charged_data'), None)
+    isCharing = next((i['value'] for i in api_result if i['code'] == 'charge_status'), None)
     if c_data:
-        if c_data == "yAAAAFYAAAA=": 
+        if isCharing == "0": 
             s['in_watts'] = 0
         else:
             try:
@@ -48,13 +50,20 @@ def get_vigor_state(api_result):
             except: pass
 
     d_data = next((i['value'] for i in api_result if i['code'] == 'battery_parameters'), None)
+    isACOn = next((i['value'] for i in api_result if i['code'] == 'ac_output_set'), False)
     if d_data:
         try:
-            raw = base64.b64decode(d_data)
-            p_out, _, t_empty = struct.unpack('<iii', raw[:12])
-            s['out_watts'] = p_out
-            if not s['is_charging']:
-                s['time_left'] = t_empty
+            if isACOn:
+                s['out_watts'] = 0
+                if not s['is_charging']:
+                    s['time_left'] = "99:99"
+            else:
+                raw = base64.b64decode(d_data)
+                p_out, _, t_empty = struct.unpack('<iii', raw[:12])
+                s['out_watts'] = p_out
+                if not s['is_charging']:
+                    s['time_left'] = t_empty
+                
         except: pass
     return s
 
@@ -119,7 +128,7 @@ def worker_tuya():
                         if is_now_online:
                             send_telegram_bg(f"⚡ Світло Є! (+{new_s['in_watts']}W)")
                         else:
-                            send_telegram_bg(f"Заряд закінчився: {new_s['battery']}%")
+                            send_telegram_bg(f"Зарядка закінчилась: {new_s['battery']}%")
 
             time.sleep(1.5)
             
@@ -219,7 +228,6 @@ def monitorPage(s):
             st.info("Очікує виконання команд...")
             
         st.markdown(f"<p style='text-align: center; color: gray; margin-top: -15px;'>{status_text} | {time_str} ({ago_text})</p>", unsafe_allow_html=True)
-
     c1, c2, c3 = st.columns(3)
     c1.metric("Вхід", f"{s['in_watts']} W")
     c2.metric("Вихід", f"{s['out_watts']} W")
