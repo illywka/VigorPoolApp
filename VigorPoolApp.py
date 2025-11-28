@@ -12,9 +12,12 @@ st.set_page_config(page_title="VigorMonitor Ultimate", page_icon="⚡", layout="
 @st.cache_resource
 class SharedStorage:
     def __init__(self):
-        self.data = None # Дані станції
-        self.last_update = 0
-        self.telegram_offset = 0 # Пам'ять для бота
+        self.data = None
+        self.last_update = 0    # Час останньої ЗМІНИ цифр
+        self.last_heartbeat = 0 # Час останнього КОНТАКТУ з сервером
+        self.telegram_offset = 0
+        self.was_online = None 
+        self.zero_counter = 0   
 
 storage = SharedStorage()
 
@@ -27,11 +30,9 @@ def get_vigor_state(api_result):
     s['fast_mode'] = next((i['value'] for i in api_result if i['code'] == 'pd_switch_1'), False) # True=Slow, False=Fast
 
     c_data = next((i['value'] for i in api_result if i['code'] == 'charged_data'), None)
-    print(c_data)
     if c_data == "yAAAAFYAAAA=": 
             s['in_watts'] = 0
             s['is_charging'] = False
-        # =============================
     else:
         try:
             raw = base64.b64decode(c_data)
@@ -47,7 +48,6 @@ def get_vigor_state(api_result):
         try:
             p_out, _, t_empty = struct.unpack('<iii', base64.b64decode(d_data))
             s['out_watts'] = p_out
-            print(p_out, t_empty)
             if not s['is_charging']:
                 s['time_left'] = t_empty
         except: pass
@@ -70,17 +70,43 @@ def send_telegram(message):
 def worker_tuya():
     while True:
         try:
-            # Створюємо з'єднання всередині циклу (або можна одне постійне)
             api = TuyaOpenAPI("https://openapi.tuyaeu.com", st.secrets["ACCESS_ID"], st.secrets["ACCESS_KEY"])
             api.connect()
             
             res = api.get(f"/v1.0/devices/{st.secrets['DEVICE_ID']}/status")
+            
             if res['success']:
                 new_s = get_vigor_state(res['result'])
-                storage.data = new_s
-                storage.last_update = time.time()
-            
-            time.sleep(1)
+                
+                # --- ЛОГІКА: ОНОВЛЕННЯ ТІЛЬКИ ПРИ ЗМІНАХ ---
+                
+                # 1. Завжди оновлюємо "Пульс" (ми бачимо станцію, вона онлайн)
+                storage.last_heartbeat = time.time()
+                
+                # 2. Перевіряємо, чи змінилися дані
+                # Якщо це перший запуск АБО дані відрізняються
+                if storage.data is None or storage.data != new_s:
+                    storage.data = new_s
+                    storage.last_update = time.time() # Оновлюємо час зміни
+
+                is_now_online = (new_s['in_watts'] > 5)
+                if storage.was_online is None:
+                    storage.was_online = is_now_online
+                elif is_now_online != storage.was_online:
+                    if not is_now_online:
+                        storage.zero_counter += 1
+                    else:
+                        storage.zero_counter = 0
+                    
+                    if is_now_online or storage.zero_counter >= 2:
+                        storage.was_online = is_now_online
+                        storage.zero_counter = 0
+                        if is_now_online:
+                            send_telegram(f"⚡ Світло Є! (+{new_s['in_watts']}W)")
+                        else:
+                            send_telegram(f"Батарея: {new_s['battery']}%")
+
+            time.sleep(1.5)
             
         except Exception as e:
             print(f"Tuya Error: {e}")
@@ -177,21 +203,37 @@ def monitorPage(s):
 
     status_text = "⚡ Заряджається..." if s['is_charging'] else "🔋 Від батареї"
     
-    last_ts = storage.last_update
-    if last_ts > 0:
-        # Переводимо в формат Години:Хвилини:Секунди
-        time_str = time.strftime("%H:%M:%S", time.localtime(last_ts))
-        # Скільки секунд пройшло
-        ago = int(time.time() - last_ts)
-        
-        # Якщо дані старіші за 20 сек - показуємо червоним
-        if ago > 20:
-            st.warning(f"⚠️ Дані застаріли! Останнє оновлення: {time_str} ({ago}с тому)")
-        else:
-            # Якщо свіжі - показуємо сірим (caption)
-            st.markdown(f"<p style='text-align: center; color: gray; margin-top: -15px;'>{status_text} | 🕒 {time_str}</p>", unsafe_allow_html=True)
+    # --- НОВА ЛОГІКА ЧАСУ ---
+    current_time = time.time()
+    
+    ping_ago = int(current_time - storage.last_heartbeat)
+
+    change_ago = int(current_time - storage.last_update)
+    
+    if storage.last_heartbeat == 0:
+        st.caption("Очікування першого підключення...")
+    elif ping_ago > 20:
+        # Червона тривога: немає зв'язку
+        st.warning(f"⚠️ Втрачено зв'язок! Офлайн {ping_ago}с")
     else:
-        st.caption("Очікування даних...")
+        time_str = time.strftime("%H:%M:%S", time.localtime(storage.last_update))
+        
+        # Красивий підпис
+        if change_ago < 2:
+            ago_text = "щойно"
+        elif change_ago > 60:
+            ago_text = f"{change_ago//60}хв {change_ago%60}с тому"
+        elif change_ago > 3600:
+            ago_text = f"{change_ago//3600}г {(change_ago%3600)//60}хв {change_ago%60}с тому"
+        else:
+            ago_text = f"{change_ago}с тому"
+            
+        st.markdown(
+            f"<p style='text-align: center; color: gray; margin-top: -15px;'>"
+            f"{status_text} | Дані оновлено: {time_str} ({ago_text})</p>", 
+            unsafe_allow_html=True
+        )
+    # -----------------------
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Вхід", f"{s['in_watts']} W")
@@ -199,7 +241,7 @@ def monitorPage(s):
     
     h = s['time_left'] // 3600
     m = (s['time_left'] % 3600) // 60
-    c3.metric("Час до закінчення", f"{h}г {m:02d}хв")
+    c3.metric("До кінця", f"{h}г {m:02d}хв")
 
 def settingsPage(s):
     real_label = "Повільна" if s['fast_mode'] else "Швидка"
