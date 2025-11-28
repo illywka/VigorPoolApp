@@ -90,11 +90,7 @@ def worker_tuya():
                     target_val, created_at = storage.pending_cmd
                     
                     # Перевіряємо, чи не протухла команда (10 хвилин = 600 сек)
-                    if (time.time() - created_at) < 600:
-                        
-                        # Перевіряємо, чи треба взагалі перемикати (може воно вже в цьому стані)
-                        # new_s['fast_mode']: True=Slow, False=Fast (Ваша інверсія)
-                        # target_val: те, що ми хочемо записати
+                    if (time.time() - created_at) < 300:
                         
                         if new_s['fast_mode'] != target_val:
                             print(f"🚀 Виконую відкладену команду: {target_val}")
@@ -104,7 +100,6 @@ def worker_tuya():
                             
                             if cmd_res['success']:
                                 mode_text = "🐢 Повільну" if target_val else "🔥 Швидку"
-                                send_telegram_bg(f"✅ Зв'язок з'явився! Перемкнув на {mode_text}.")
                     
                     # Очищаємо чергу (виконали або протухла)
                     storage.pending_cmd = None
@@ -165,21 +160,15 @@ def worker_telegram():
                             mode = "🐢 Slow" if s['fast_mode'] else "🔥 Fast"
                             
                             upd_time = time.strftime("%H:%M:%S", time.localtime(storage.last_update))
-                            
-                            # Додаємо статус черги команд
-                            queue_status = ""
-                            if storage.pending_cmd:
-                                queue_status = "\n⏳ Є відкладена команда!"
 
                             reply = (
-                                f"🔋 **Vigorpool**\n"
+                                f"🔋 Статус\n"
                                 f"━━━━━━━━\n"
-                                f"Батарея: **{s['battery']}%**\n"
-                                f"🟢 Вхід: `{s['in_watts']} W`\n"
-                                f"🔌 Вихід: `{s['out_watts']} W`\n"
-                                f"🌡 Темп: {s['temp']}°C\n"
-                                f"⚙️ Режим: {mode}\n\n"
-                                f"🕒 Дані: {upd_time}{queue_status}"
+                                f"Батарея: {s['battery']}%\n"
+                                f"🟢 Вхід: {s['in_watts']} W\n"
+                                f"🔌 Вихід: {s['out_watts']} W\n"
+                                f"🌡 Температура: {s['temp']}°C\n"
+                                f"🕒 Дані оновлено: {upd_time}"
                             )
                             send_telegram_bg(reply, target_id=cid)
             time.sleep(1)
