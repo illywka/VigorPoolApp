@@ -157,7 +157,6 @@ def worker_telegram():
                     if cid in allowed_list:
                         if "/status" in text or "статус" in text or "start" in text:
                             s = storage.data
-                            mode = "🐢 Slow" if s['fast_mode'] else "🔥 Fast"
                             
                             upd_time = time.strftime("%H:%M:%S", time.localtime(storage.last_update))
 
@@ -229,7 +228,7 @@ def monitorPage(s):
     
     h = s['time_left'] // 3600
     m = (s['time_left'] % 3600) // 60
-    c3.metric("Таймер", f"{h}:{m:02d}")
+    c3.metric("До кінця", f"{h}:{m:02d}")
 
 def settingsPage(s):
     real = "Повільна" if s['fast_mode'] else "Швидка"
