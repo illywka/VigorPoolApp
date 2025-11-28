@@ -27,9 +27,15 @@ def get_vigor_state(api_result):
     s['fast_mode'] = next((i['value'] for i in api_result if i['code'] == 'pd_switch_1'), False) # True=Slow, False=Fast
 
     c_data = next((i['value'] for i in api_result if i['code'] == 'charged_data'), None)
-    if c_data:
+    print(c_data)
+    if c_data == "yAAAAFYAAAA=": 
+            s['in_watts'] = 0
+            s['is_charging'] = False
+        # =============================
+    else:
         try:
-            p_in, t_full = struct.unpack('<ii', base64.b64decode(c_data))
+            raw = base64.b64decode(c_data)
+            p_in, t_full = struct.unpack('<ii', raw[:8])
             s['in_watts'] = p_in
             if p_in > 0:
                 s['is_charging'] = True
@@ -41,13 +47,11 @@ def get_vigor_state(api_result):
         try:
             p_out, _, t_empty = struct.unpack('<iii', base64.b64decode(d_data))
             s['out_watts'] = p_out
+            print(p_out, t_empty)
             if not s['is_charging']:
                 s['time_left'] = t_empty
         except: pass
     return s
-
-def send_telegram(message):
-    import time
 
 # Глобальна змінна для зберігання часу останньої відправки
 last_sent_time = 0
@@ -170,12 +174,24 @@ def toggle_speed_manual(is_slow):
 def monitorPage(s):
     # Візуалізація
     st.markdown(f"<h1 style='text-align: center; font-size: 80px; margin-bottom: 0;'>{s['battery']}%</h1>", unsafe_allow_html=True)
+
+    status_text = "⚡ Заряджається..." if s['is_charging'] else "🔋 Від батареї"
     
-    # Індикатор зарядки (анімація текстом)
-    if s['is_charging']:
-        st.caption(":zap: Заряджається...")
+    last_ts = storage.last_update
+    if last_ts > 0:
+        # Переводимо в формат Години:Хвилини:Секунди
+        time_str = time.strftime("%H:%M:%S", time.localtime(last_ts))
+        # Скільки секунд пройшло
+        ago = int(time.time() - last_ts)
+        
+        # Якщо дані старіші за 20 сек - показуємо червоним
+        if ago > 20:
+            st.warning(f"⚠️ Дані застаріли! Останнє оновлення: {time_str} ({ago}с тому)")
+        else:
+            # Якщо свіжі - показуємо сірим (caption)
+            st.markdown(f"<p style='text-align: center; color: gray; margin-top: -15px;'>{status_text} | 🕒 {time_str}</p>", unsafe_allow_html=True)
     else:
-        st.caption("Розряджається")
+        st.caption("Очікування даних...")
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Вхід", f"{s['in_watts']} W")
