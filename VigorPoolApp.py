@@ -93,20 +93,18 @@ def worker_tuya():
                     if (time.time() - created_at) < 300:
                         
                         if new_s['fast_mode'] != target_val:
-                            print(f"🚀 Виконую відкладену команду: {target_val}")
                             
                             payload = {"commands": [{"code": "pd_switch_1", "value": target_val}]}
                             cmd_res = api.post(f"/v1.0/devices/{st.secrets['DEVICE_ID']}/commands", payload)
                             
                             if cmd_res['success']:
-                                mode_text = "🐢 Повільну" if target_val else "🔥 Швидку"
-                    
-                    # Очищаємо чергу (виконали або протухла)
-                    storage.pending_cmd = None
+                                storage.pending_cmd = None
 
-                # --- В. ЛОГІКА СПОВІЩЕНЬ ---
-                is_now_online = (new_s['in_watts'] > 5)
-
+                is_fresh = (time.time() - storage.last_update) < 2
+                has_power = (new_s['in_watts'] > 5)
+                
+                # Спрощена надійна логіка:
+                is_now_online = has_power and is_fresh
                 if storage.was_online is None:
                     storage.was_online = is_now_online
                 elif is_now_online != storage.was_online:
@@ -121,7 +119,7 @@ def worker_tuya():
                         if is_now_online:
                             send_telegram_bg(f"⚡ Світло Є! (+{new_s['in_watts']}W)")
                         else:
-                            send_telegram_bg(f"🪫 Світло ЗНИКЛО. ({new_s['battery']}%)")
+                            send_telegram_bg(f"Заряд закінчився: {new_s['battery']}%")
 
             time.sleep(1.5)
             
@@ -228,7 +226,7 @@ def monitorPage(s):
     
     h = s['time_left'] // 3600
     m = (s['time_left'] % 3600) // 60
-    c3.metric("До кінця", f"{h}:{m:02d}")
+    c3.metric("До кінця", f"{h}г {m:02d}хв")
 
 def settingsPage(s):
     real = "Повільна" if s['fast_mode'] else "Швидка"
