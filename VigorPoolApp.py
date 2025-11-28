@@ -216,10 +216,10 @@ def monitorPage(s):
     else:
         if change_ago < 2:
             ago_text = "щойно"
-        elif change_ago > 60:
-            ago_text = f"{change_ago//60}хв {change_ago%60}с тому"
         elif change_ago > 3600:
             ago_text = f"{change_ago//3600}г {(change_ago%3600)//60}хв {change_ago%60}с тому"
+        elif change_ago > 60:
+            ago_text = f"{change_ago//60}хв {change_ago%60}с тому"
         else:
             ago_text = f"{change_ago}с тому"
         
