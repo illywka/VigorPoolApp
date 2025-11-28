@@ -185,10 +185,10 @@ start_threads()
 
 def queue_speed_command(is_slow):
     storage.pending_cmd = (is_slow, time.time())
-    
-    label = "🐢 Повільну" if is_slow else "🔥 Швидку"
-    st.toast(f"Команду на {label} додано в чергу! Виконається при появі зв'язку (до 10хв).", icon="⏳")
 
+    st.toast(f"Команду додано в чергу! Виконається при появі зв'язку (до 5хв).")
+
+@st.fragment(run_every=1)
 def monitorPage(s):
     st.markdown(f"<h1 style='text-align: center; font-size: 80px; margin-bottom: 0;'>{s['battery']}%</h1>", unsafe_allow_html=True)
     status_text = "⚡ Заряджається..." if s['is_charging'] else "🔋 Від батареї"
@@ -259,9 +259,6 @@ def main():
     monitor, settings = st.tabs(["Моніторинг", "Керування"])
     with monitor: monitorPage(s)
     with settings: settingsPage(s)
-
-    time.sleep(1)
-    st.rerun()
 
 if __name__ == "__main__":
     main()
