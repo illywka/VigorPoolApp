@@ -264,7 +264,6 @@ def main():
     s = storage.data
     
     if s is None:
-        st.info("Підключаюсь...")
         time.sleep(1)
         st.rerun()
         return
