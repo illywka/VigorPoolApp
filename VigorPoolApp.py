@@ -19,9 +19,6 @@ class SharedStorage:
         self.was_online = None 
         self.zero_counter = 0
         
-        # --- НОВЕ: ЧЕРГА КОМАНД ---
-        # Зберігаємо кортеж: (значення_pd_switch, час_створення)
-        # Наприклад: (True, 1700000000.0)
         self.pending_cmd = None 
 
 storage = SharedStorage()
@@ -32,12 +29,10 @@ def get_vigor_state(api_result):
     s['battery'] = next((i['value'] for i in api_result if i['code'] == 'battery_percentage'), 0)
     s['temp'] = next((i['value'] for i in api_result if i['code'] == 'temp_current'), 0)
     s['fast_mode'] = next((i['value'] for i in api_result if i['code'] == 'pd_switch_1'), False)
-    #s['test'] =  next((i['value'] for i in api_result if i['code'] == 'link_mode'), 0)
 
     c_data = next((i['value'] for i in api_result if i['code'] == 'charged_data'), None)
-    isCharing = next((i['value'] for i in api_result if i['code'] == 'charge_status'), None)
     if c_data:
-        if isCharing == "0": 
+        if c_data == "yAAAAFYAAAA=": 
             s['in_watts'] = 0
         else:
             try:
@@ -50,20 +45,13 @@ def get_vigor_state(api_result):
             except: pass
 
     d_data = next((i['value'] for i in api_result if i['code'] == 'battery_parameters'), None)
-    isACOn = next((i['value'] for i in api_result if i['code'] == 'ac_output_set'), False)
     if d_data:
         try:
-            if isACOn:
-                s['out_watts'] = 0
-                if not s['is_charging']:
-                    s['time_left'] = "99:99"
-            else:
-                raw = base64.b64decode(d_data)
-                p_out, _, t_empty = struct.unpack('<iii', raw[:12])
-                s['out_watts'] = p_out
-                if not s['is_charging']:
-                    s['time_left'] = t_empty
-                
+            raw = base64.b64decode(d_data)
+            p_out, _, t_empty = struct.unpack('<iii', raw[:12])
+            s['out_watts'] = p_out
+            if not s['is_charging']:
+                s['time_left'] = t_empty
         except: pass
     return s
 
@@ -75,7 +63,7 @@ def send_telegram_bg(message, target_id=None):
                       data={"chat_id": chat_id, "text": message}, timeout=5)
     except: pass
 
-# --- 3. ПОТІК 1: TUYA + ВИКОНАВЕЦЬ КОМАНД ---
+# --- 3. ПОТІК 1: TUYA ---
 def worker_tuya():
     while True:
         try:
@@ -89,31 +77,23 @@ def worker_tuya():
             if res['success']:
                 new_s = get_vigor_state(res['result'])
                 
-                # --- А. ОНОВЛЕННЯ ДАНИХ ---
                 if storage.data is None or storage.data != new_s:
                     storage.data = new_s
                     storage.last_update = time.time()
                 
-                # --- Б. ПЕРЕВІРКА ВІДКЛАДЕНИХ КОМАНД (НОВЕ!) ---
                 if storage.pending_cmd is not None:
                     target_val, created_at = storage.pending_cmd
-                    
-                    # Перевіряємо, чи не протухла команда (10 хвилин = 600 сек)
                     if (time.time() - created_at) < 300:
-                        
                         if new_s['fast_mode'] != target_val:
-                            
                             payload = {"commands": [{"code": "pd_switch_1", "value": target_val}]}
                             cmd_res = api.post(f"/v1.0/devices/{st.secrets['DEVICE_ID']}/commands", payload)
-                            
                             if cmd_res['success']:
                                 storage.pending_cmd = None
-
-                is_fresh = (time.time() - storage.last_update) < 2
-                has_power = (new_s['in_watts'] > 5)
                 
-                # Спрощена надійна логіка:
+                is_fresh = (time.time() - storage.last_update) < 10 
+                has_power = (new_s['in_watts'] > 5)
                 is_now_online = has_power and is_fresh
+                
                 if storage.was_online is None:
                     storage.was_online = is_now_online
                 elif is_now_online != storage.was_online:
@@ -128,12 +108,10 @@ def worker_tuya():
                         if is_now_online:
                             send_telegram_bg(f"⚡ Світло Є! (+{new_s['in_watts']}W)")
                         else:
-                            send_telegram_bg(f"Зарядка закінчилась: {new_s['battery']}%")
+                            send_telegram_bg(f"🪫 Світло ЗНИКЛО. ({new_s['battery']}%)")
 
             time.sleep(1.5)
-            
         except Exception as e:
-            print(f"Tuya Error: {e}")
             time.sleep(5)
 
 # --- 4. ПОТІК 2: TELEGRAM ---
@@ -156,7 +134,6 @@ def worker_telegram():
             if resp.get('ok') and resp.get('result'):
                 for update in resp['result']:
                     storage.telegram_offset = update['update_id']
-                    
                     msg = update.get('message', {})
                     text = msg.get('text', '').lower()
                     cid = str(msg.get('chat', {}).get('id', ''))
@@ -164,17 +141,17 @@ def worker_telegram():
                     if cid in allowed_list:
                         if "/status" in text or "статус" in text or "start" in text:
                             s = storage.data
-                            
+                            mode = "🐢 Slow" if s['fast_mode'] else "🔥 Fast"
                             upd_time = time.strftime("%H:%M:%S", time.localtime(storage.last_update))
-
+                            queue_msg = "\n⏳ Є команда в черзі" if storage.pending_cmd else ""
+                            
                             reply = (
-                                f"🔋 Статус\n"
-                                f"━━━━━━━━\n"
-                                f"Батарея: {s['battery']}%\n"
-                                f"🟢 Вхід: {s['in_watts']} W\n"
-                                f"🔌 Вихід: {s['out_watts']} W\n"
-                                f"🌡 Температура: {s['temp']}°C\n"
-                                f"🕒 Дані оновлено: {upd_time}"
+                                f"🔋 **Vigorpool**\n━━━━━━━━\n"
+                                f"Батарея: **{s['battery']}%**\n"
+                                f"🟢 Вхід: `{s['in_watts']} W`\n"
+                                f"🔌 Вихід: `{s['out_watts']} W`\n"
+                                f"⚙️ Режим: {mode}\n\n"
+                                f"🕒 {upd_time}{queue_msg}"
                             )
                             send_telegram_bg(reply, target_id=cid)
             time.sleep(1)
@@ -192,51 +169,67 @@ start_threads()
 
 def queue_speed_command(is_slow):
     storage.pending_cmd = (is_slow, time.time())
-
-    st.toast(f"Команду додано в чергу! Виконається при появі зв'язку (до 5хв).")
+    st.toast(f"Команду додано в чергу!", icon="⏳")
 
 @st.fragment(run_every=1)
 def monitorPage(s):
-    st.markdown(f"<h1 style='text-align: center; font-size: 80px; margin-bottom: 0;'>{s['battery']}%</h1>", unsafe_allow_html=True)
-    status_text = "⚡ Заряджається..." if s['is_charging'] else "🔋 Від батареї"
+    # !!! ВИПРАВЛЕННЯ: Якщо s немає (дані ще не прийшли), беремо свіжі з пам'яті або створюємо заглушку
+    if s is None:
+        s = storage.data # Спробуємо взяти з пам'яті
     
-    current_time = time.time()
-    last_hb = storage.last_heartbeat if storage.last_heartbeat > 0 else current_time
-    last_upd = storage.last_update if storage.last_update > 0 else current_time
-
-    ping_ago = int(current_time - last_hb)
-    change_ago = int(current_time - last_upd)
-    
-    time_str = time.strftime("%H:%M:%S", time.localtime(last_upd))
-    
-    if storage.data is None:
-         st.caption("⏳ Очікування даних...")
-    elif ping_ago > 20:
-        st.warning(f"⚠️ Втрачено зв'язок! Офлайн {ping_ago}с")
+    # Якщо все ще немає (перші секунди запуску), робимо нульову заглушку
+    if s is None:
+        s = { "battery": "--", "temp": 0, "in_watts": 0, "out_watts": 0, "time_left": 0, "is_charging": False, "fast_mode": False }
+        is_loading = True
     else:
-        if change_ago < 2:
-            ago_text = "щойно"
-        elif change_ago > 3600:
-            ago_text = f"{change_ago//3600}г {(change_ago%3600)//60}хв {change_ago%60}с тому"
-        elif change_ago > 60:
-            ago_text = f"{change_ago//60}хв {change_ago%60}с тому"
-        else:
-            ago_text = f"{change_ago}с тому"
+        is_loading = False
+
+    st.markdown(f"<h1 style='text-align: center; font-size: 80px; margin-bottom: 0;'>{s['battery']}%</h1>", unsafe_allow_html=True)
+    
+    if is_loading:
+        st.markdown(f"<p style='text-align: center; color: gray;'>📡 Підключення...</p>", unsafe_allow_html=True)
+    else:
+        status_text = "⚡ Заряджається..." if s['is_charging'] else "🔋 Від батареї"
         
-        # Відображаємо, якщо є команда в черзі
-        if storage.pending_cmd:
-            st.info("Очікує виконання команд...")
+        current_time = time.time()
+        last_hb = storage.last_heartbeat if storage.last_heartbeat > 0 else current_time
+        last_upd = storage.last_update if storage.last_update > 0 else current_time
+
+        ping_ago = int(current_time - last_hb)
+        change_ago = int(current_time - last_upd)
+        
+        time_str = time.strftime("%H:%M:%S", time.localtime(last_upd))
+        
+        if ping_ago > 20:
+            st.warning(f"⚠️ Втрачено зв'язок! Офлайн {ping_ago}с")
+        else:
+            if change_ago < 2:
+                ago_text = "щойно"
+            else:
+                ago_text = f"{change_ago}с тому"
             
-        st.markdown(f"<p style='text-align: center; color: gray; margin-top: -15px;'>{status_text} | {time_str} ({ago_text})</p>", unsafe_allow_html=True)
+            if storage.pending_cmd:
+                st.info("Очікує виконання команд...")
+                
+            st.markdown(f"<p style='text-align: center; color: gray; margin-top: -15px;'>{status_text} | {time_str} ({ago_text})</p>", unsafe_allow_html=True)
+
     c1, c2, c3 = st.columns(3)
     c1.metric("Вхід", f"{s['in_watts']} W")
     c2.metric("Вихід", f"{s['out_watts']} W")
     
-    h = s['time_left'] // 3600
-    m = (s['time_left'] % 3600) // 60
-    c3.metric("До кінця", f"{h}г {m:02d}хв")
+    if is_loading:
+        c3.metric("До кінця", "--:--")
+    else:
+        h = s['time_left'] // 3600
+        m = (s['time_left'] % 3600) // 60
+        c3.metric("До кінця", f"{h}г {m:02d}хв")
 
 def settingsPage(s):
+    # Якщо даних ще немає, просто повертаємось (або показуємо спінер)
+    if s is None:
+        st.info("Зачекайте, дані завантажуються...")
+        return
+
     real = "Повільна" if s['fast_mode'] else "Швидка"
     
     if 'fake_val' not in st.session_state: st.session_state['fake_val'] = real
@@ -249,18 +242,14 @@ def settingsPage(s):
     if sel != disp:
         st.session_state['last_click'] = time.time()
         st.session_state['fake_val'] = sel
-        
-        # Замість toggle_speed_manual викликаємо queue_speed_command
         queue_speed_command(sel == "Повільна")
         st.rerun()
 
 def main():
     s = storage.data
     
-    if s is None:
-        time.sleep(1)
-        st.rerun()
-        return
+    # !!! ВИПРАВЛЕННЯ: Прибрали блокуючий if s is None return !!!
+    # Інтерфейс малюється відразу, навіть якщо s == None
 
     monitor, settings = st.tabs(["Моніторинг", "Керування"])
     with monitor: monitorPage(s)
