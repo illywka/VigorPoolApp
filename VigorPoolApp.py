@@ -29,18 +29,20 @@ def get_vigor_state(api_result):
     s['battery'] = next((i['value'] for i in api_result if i['code'] == 'battery_percentage'), 0)
     s['temp'] = next((i['value'] for i in api_result if i['code'] == 'temp_current'), 0)
     s['fast_mode'] = next((i['value'] for i in api_result if i['code'] == 'pd_switch_1'), False)
+    s['test'] = next((i['value'] for i in api_result if i['code'] == 'voltage_over'), False)
 
     c_data = next((i['value'] for i in api_result if i['code'] == 'charged_data'), None)
     if c_data:
         if c_data == "yAAAAFYAAAA=": 
             s['in_watts'] = 0
+
         else:
             try:
                 raw = base64.b64decode(c_data)
                 p_in, t_full = struct.unpack('<ii', raw[:8])
                 s['in_watts'] = p_in
                 if p_in > 0:
-                    s['is_charging'] = True
+                    s['is_charging'] = False # Тимчасова заглушка, має бути true
                     s['time_left'] = t_full
             except: pass
 
@@ -106,8 +108,8 @@ def worker_tuya():
                         storage.was_online = is_now_online
                         storage.zero_counter = 0
                         if is_now_online and False:
-                            send_telegram_bg(f"Світло Є!")
                             send_telegram_bg(f"Зарядка закінчилась: ({new_s['battery']}%)")
+                            send_telegram_bg(f"Світло Є!")
                             
 
             time.sleep(1.5)
@@ -145,7 +147,7 @@ def worker_telegram():
                             queue_msg = "\n⏳ Є команда в черзі" if storage.pending_cmd else ""
                             
                             reply = (
-                                f"Статус\n━━━━━━━━\n"
+                                f"Статус \n━━━━━━━━\n"
                                 f"Батарея: {s['battery']}%\n"
                                 f"🟢 Вхід: `{s['in_watts']} W`\n"
                                 f"🔌 Вихід: `{s['out_watts']} W`\n"
@@ -245,9 +247,6 @@ def settingsPage(s):
 
 def main():
     s = storage.data
-    
-    # !!! ВИПРАВЛЕННЯ: Прибрали блокуючий if s is None return !!!
-    # Інтерфейс малюється відразу, навіть якщо s == None
 
     monitor, settings = st.tabs(["Моніторинг", "Керування"])
     with monitor: monitorPage(s)
