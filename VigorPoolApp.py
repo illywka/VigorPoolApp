@@ -18,8 +18,14 @@ class SharedStorage:
         self.telegram_offset = 0
         self.was_online = None 
         self.zero_counter = 0
-        
         self.pending_cmd = None 
+        
+        # --- WATCHDOG: ПАМ'ЯТЬ ДЛЯ ЗАЛИПАННЯ ---
+        self.last_in_val = -1
+        self.last_in_change = 0
+        
+        self.last_out_val = -1
+        self.last_out_change = 0
 
 storage = SharedStorage()
 
@@ -29,20 +35,18 @@ def get_vigor_state(api_result):
     s['battery'] = next((i['value'] for i in api_result if i['code'] == 'battery_percentage'), 0)
     s['temp'] = next((i['value'] for i in api_result if i['code'] == 'temp_current'), 0)
     s['fast_mode'] = next((i['value'] for i in api_result if i['code'] == 'pd_switch_1'), False)
-    s['test'] = next((i['value'] for i in api_result if i['code'] == 'voltage_over'), False)
 
     c_data = next((i['value'] for i in api_result if i['code'] == 'charged_data'), None)
     if c_data:
         if c_data == "yAAAAFYAAAA=": 
             s['in_watts'] = 0
-
         else:
             try:
                 raw = base64.b64decode(c_data)
                 p_in, t_full = struct.unpack('<ii', raw[:8])
                 s['in_watts'] = p_in
                 if p_in > 0:
-                    s['is_charging'] = False # Тимчасова заглушка, має бути true
+                    s['is_charging'] = True
                     s['time_left'] = t_full
             except: pass
 
@@ -55,6 +59,10 @@ def get_vigor_state(api_result):
             if not s['is_charging']:
                 s['time_left'] = t_empty
         except: pass
+    
+    # Додатковий захист
+    if s['battery'] == 100: s['in_watts'] = 0
+        
     return s
 
 def send_telegram_bg(message, target_id=None):
@@ -65,7 +73,7 @@ def send_telegram_bg(message, target_id=None):
                       data={"chat_id": chat_id, "text": message}, timeout=5)
     except: pass
 
-# --- 3. ПОТІК 1: TUYA ---
+# --- 3. ПОТІК 1: TUYA + WATCHDOG ---
 def worker_tuya():
     while True:
         try:
@@ -73,44 +81,66 @@ def worker_tuya():
             api.connect()
             
             res = api.get(f"/v1.0/devices/{st.secrets['DEVICE_ID']}/status")
-            
             storage.last_heartbeat = time.time()
             
             if res['success']:
                 new_s = get_vigor_state(res['result'])
+                curr_time = time.time()
+
+                # === ЛОГІКА "WATCHDOG" (ВБИВЦЯ ЗАЛИПАННЯ) ===
                 
+                # 1. Перевірка ВХОДУ
+                if new_s['in_watts'] != storage.last_in_val:
+                    # Значення змінилось - все ок, оновлюємо таймер
+                    storage.last_in_val = new_s['in_watts']
+                    storage.last_in_change = curr_time
+                elif new_s['in_watts'] > 0 and (curr_time - storage.last_in_change) > 60:
+                    # Значення висить > 60 сек -> Скидаємо в 0
+                    new_s['in_watts'] = 0
+                    new_s['is_charging'] = False
+                
+                # 2. Перевірка ВИХОДУ
+                if new_s['out_watts'] != storage.last_out_val:
+                    storage.last_out_val = new_s['out_watts']
+                    storage.last_out_change = curr_time
+                elif new_s['out_watts'] > 0 and (curr_time - storage.last_out_change) > 60:
+                    # Значення висить > 60 сек -> Скидаємо в 0
+                    new_s['out_watts'] = 0
+                
+                # ============================================
+
                 if storage.data is None or storage.data != new_s:
                     storage.data = new_s
-                    storage.last_update = time.time()
+                    storage.last_update = curr_time
                 
-                if storage.pending_cmd is not None:
+                # Команди
+                if storage.pending_cmd:
                     target_val, created_at = storage.pending_cmd
-                    if (time.time() - created_at) < 300:
+                    if (curr_time - created_at) < 300:
                         if new_s['fast_mode'] != target_val:
-                            payload = {"commands": [{"code": "pd_switch_1", "value": target_val}]}
-                            cmd_res = api.post(f"/v1.0/devices/{st.secrets['DEVICE_ID']}/commands", payload)
-                            if cmd_res['success']:
+                            pl = {"commands": [{"code": "pd_switch_1", "value": target_val}]}
+                            if api.post(f"/v1.0/devices/{st.secrets['DEVICE_ID']}/commands", pl)['success']:
                                 storage.pending_cmd = None
-                
-                is_fresh = (time.time() - storage.last_update) < 10 
+                    else: storage.pending_cmd = None
+
+                # Сповіщення
+                is_fresh = (curr_time - storage.last_update) < 15 
                 has_power = (new_s['in_watts'] > 5)
                 is_now_online = has_power and is_fresh
                 
                 if storage.was_online is None:
                     storage.was_online = is_now_online
                 elif is_now_online != storage.was_online:
-                    if not is_now_online:
-                        storage.zero_counter += 1
-                    else:
-                        storage.zero_counter = 0
+                    if not is_now_online: storage.zero_counter += 1
+                    else: storage.zero_counter = 0
                     
                     if is_now_online or storage.zero_counter >= 2:
                         storage.was_online = is_now_online
                         storage.zero_counter = 0
-                        if is_now_online and False:
-                            send_telegram_bg(f"Зарядка закінчилась: ({new_s['battery']}%)")
-                            send_telegram_bg(f"Світло Є!")
-                            
+                        if is_now_online:
+                            send_telegram_bg(f"Світло Є!{new_s['in_watts']}")
+                        else:
+                            send_telegram_bg(f"Зарядка закінчилась. ({new_s['battery']}%)")
 
             time.sleep(1.5)
         except Exception as e:
@@ -126,7 +156,6 @@ def worker_telegram():
 
             raw_users = st.secrets.get("ALLOWED_USERS", st.secrets["CHAT_ID"])
             allowed_list = [u.strip() for u in raw_users.split(",")] 
-
             token = st.secrets["BOT_TOKEN"]
             url = f"https://api.telegram.org/bot{token}/getUpdates"
             params = {"offset": storage.telegram_offset + 1, "timeout": 10}
@@ -143,15 +172,14 @@ def worker_telegram():
                     if cid in allowed_list:
                         if "/status" in text or "статус" in text or "start" in text:
                             s = storage.data
-                            upd_time = time.strftime("%H:%M:%S", time.localtime(storage.last_update))
-                            queue_msg = "\n⏳ Є команда в черзі" if storage.pending_cmd else ""
-                            
+                            upd = time.strftime("%H:%M:%S", time.localtime(storage.last_update))
+                            q_msg = "\n⏳ Команда в черзі" if storage.pending_cmd else ""
                             reply = (
-                                f"Статус \n━━━━━━━━\n"
+                                f"🔋 Статус\n━━━━━━━━\n"
                                 f"Батарея: {s['battery']}%\n"
                                 f"🟢 Вхід: `{s['in_watts']} W`\n"
                                 f"🔌 Вихід: `{s['out_watts']} W`\n"
-                                f"🕒 {upd_time}{queue_msg}"
+                                f"🕒 {upd}{q_msg}"
                             )
                             send_telegram_bg(reply, target_id=cid)
             time.sleep(1)
@@ -173,11 +201,7 @@ def queue_speed_command(is_slow):
 
 @st.fragment(run_every=1)
 def monitorPage(s):
-    # !!! ВИПРАВЛЕННЯ: Якщо s немає (дані ще не прийшли), беремо свіжі з пам'яті або створюємо заглушку
-    if s is None:
-        s = storage.data # Спробуємо взяти з пам'яті
-    
-    # Якщо все ще немає (перші секунди запуску), робимо нульову заглушку
+    if s is None: s = storage.data
     if s is None:
         s = { "battery": "--", "temp": 0, "in_watts": 0, "out_watts": 0, "time_left": 0, "is_charging": False, "fast_mode": False }
         is_loading = True
@@ -188,57 +212,39 @@ def monitorPage(s):
     
     if is_loading:
         st.markdown(f"<p style='text-align: center; color: gray;'>📡 Підключення...</p>", unsafe_allow_html=True)
+        display_in, display_out, display_time = 0, 0, "--:--"
     else:
         status_text = "⚡ Заряджається..." if s['is_charging'] else "🔋 Від батареї"
-        
-        current_time = time.time()
-        last_hb = storage.last_heartbeat if storage.last_heartbeat > 0 else current_time
-        last_upd = storage.last_update if storage.last_update > 0 else current_time
-
-        ping_ago = int(current_time - last_hb)
-        change_ago = int(current_time - last_upd)
-        
-        time_str = time.strftime("%H:%M:%S", time.localtime(last_upd))
+        curr = time.time()
+        ping_ago = int(curr - storage.last_heartbeat) if storage.last_heartbeat else 0
+        change_ago = int(curr - storage.last_update) if storage.last_update else 0
+        time_str = time.strftime("%H:%M:%S", time.localtime(storage.last_update)) if storage.last_update else "--:--"
         
         if ping_ago > 20:
             st.warning(f"⚠️ Втрачено зв'язок! Офлайн {ping_ago}с")
         else:
-            if change_ago < 2:
-                ago_text = "щойно"
-            else:
-                ago_text = f"{change_ago}с тому"
-            
-            if storage.pending_cmd:
-                st.info("Очікує виконання команд...")
-                
+            ago_text = "щойно" if change_ago < 2 else f"{change_ago}с тому"
+            if storage.pending_cmd: st.info("Очікує виконання команд...")
             st.markdown(f"<p style='text-align: center; color: gray; margin-top: -15px;'>{status_text} | {time_str} ({ago_text})</p>", unsafe_allow_html=True)
 
+        display_in, display_out = s['in_watts'], s['out_watts']
+        h, m = s['time_left'] // 3600, (s['time_left'] % 3600) // 60
+        display_time = f"{h}г {m:02d}хв"
+
     c1, c2, c3 = st.columns(3)
-    c1.metric("Вхід", f"{s['in_watts']} W")
-    c2.metric("Вихід", f"{s['out_watts']} W")
-    
-    if is_loading:
-        c3.metric("До кінця", "--:--")
-    else:
-        h = s['time_left'] // 3600
-        m = (s['time_left'] % 3600) // 60
-        c3.metric("До кінця", f"{h}г {m:02d}хв")
+    c1.metric("Вхід", f"{display_in} W")
+    c2.metric("Вихід", f"{display_out} W")
+    c3.metric("До кінця", display_time)
 
 def settingsPage(s):
-    # Якщо даних ще немає, просто повертаємось (або показуємо спінер)
     if s is None:
         st.info("Зачекайте, дані завантажуються...")
         return
-
     real = "Повільна" if s['fast_mode'] else "Швидка"
-    
     if 'fake_val' not in st.session_state: st.session_state['fake_val'] = real
     if 'last_click' not in st.session_state: st.session_state['last_click'] = 0
-    
     disp = st.session_state['fake_val'] if (time.time() - st.session_state['last_click'] < 5) else real
-    
     sel = st.select_slider("Режим зарядки:", ["Повільна", "Швидка"], value=disp)
-    
     if sel != disp:
         st.session_state['last_click'] = time.time()
         st.session_state['fake_val'] = sel
@@ -247,7 +253,6 @@ def settingsPage(s):
 
 def main():
     s = storage.data
-
     monitor, settings = st.tabs(["Моніторинг", "Керування"])
     with monitor: monitorPage(s)
     with settings: settingsPage(s)
