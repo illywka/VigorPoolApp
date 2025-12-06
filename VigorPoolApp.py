@@ -141,16 +141,14 @@ def worker_telegram():
                     if cid in allowed_list:
                         if "/status" in text or "статус" in text or "start" in text:
                             s = storage.data
-                            mode = "🐢 Slow" if s['fast_mode'] else "🔥 Fast"
                             upd_time = time.strftime("%H:%M:%S", time.localtime(storage.last_update))
                             queue_msg = "\n⏳ Є команда в черзі" if storage.pending_cmd else ""
                             
                             reply = (
-                                f"🔋 **Vigorpool**\n━━━━━━━━\n"
-                                f"Батарея: **{s['battery']}%**\n"
+                                f"Статус\n━━━━━━━━\n"
+                                f"Батарея: {s['battery']}%\n"
                                 f"🟢 Вхід: `{s['in_watts']} W`\n"
                                 f"🔌 Вихід: `{s['out_watts']} W`\n"
-                                f"⚙️ Режим: {mode}\n\n"
                                 f"🕒 {upd_time}{queue_msg}"
                             )
                             send_telegram_bg(reply, target_id=cid)
