@@ -125,8 +125,8 @@ def worker_tuya():
 
                 # Сповіщення
                 is_fresh = (curr_time - storage.last_update) < 15 
-                has_power_from_AC = (new_s['in_watts'] > 430)
-                is_now_online = has_power_from_AC and is_fresh
+                has_power = (new_s['in_watts'] > 5)
+                is_now_online = has_power and is_fresh
                 
                 if storage.was_online is None:
                     storage.was_online = is_now_online
@@ -142,7 +142,7 @@ def worker_tuya():
                         else:
                             send_telegram_bg(f"Зарядка закінчилась. ({new_s['battery']}%)")
 
-            time.sleep(1.5)
+            time.sleep(5)
         except Exception as e:
             time.sleep(5)
 
