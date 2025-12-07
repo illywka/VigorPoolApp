@@ -7,7 +7,6 @@ import requests
 import threading
 
 st.set_page_config(page_title="VigorMonitor Ultimate", page_icon="⚡", layout="centered")
-global display_time
 # --- 1. СПІЛЬНА ПАМ'ЯТЬ ---
 @st.cache_resource
 class SharedStorage:
@@ -173,6 +172,9 @@ def worker_telegram():
                         if "/status" in text or "статус" in text or "start" in text:
                             s = storage.data
                             upd = time.strftime("%H:%M:%S", time.localtime(storage.last_update))
+                            h = s['time_left'] // 3600
+                            m = (s['time_left'] % 3600) // 60
+                            display_time = f"{h}г {m:02d}хв"
                             reply = (
                                 f"Батарея: {s['battery']}%\n\n"
                                 f"🟢 Вхід: {s['in_watts']} W\n"
