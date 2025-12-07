@@ -44,10 +44,7 @@ def get_vigor_state(api_result):
             try:
                 raw = base64.b64decode(c_data)
                 p_in, t_full = struct.unpack('<ii', raw[:8])
-                s['in_watts'] = p_in
-                if p_in > 0:
-                    s['is_charging'] = True
-                    s['time_left'] = t_full
+                
             except: pass
 
     d_data = next((i['value'] for i in api_result if i['code'] == 'battery_parameters'), None)
@@ -56,7 +53,10 @@ def get_vigor_state(api_result):
             raw = base64.b64decode(d_data)
             p_out, _, t_empty = struct.unpack('<iii', raw[:12])
             s['out_watts'] = p_out
-            if not s['is_charging']:
+            s['in_watts'] = p_in
+            if p_in > 0 and p_in > p_out:
+                s['time_left'] = t_full
+            else:
                 s['time_left'] = t_empty
         except: pass
     
