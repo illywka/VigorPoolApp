@@ -6,7 +6,7 @@ import time
 import requests
 import threading
 
-st.set_page_config(page_title="VigorMonitor Ultimate", page_icon="⚡", layout="centered")
+st.set_page_config(page_title="VigorMonitor", page_icon="⚡", layout="centered")
 # --- 1. СПІЛЬНА ПАМ'ЯТЬ ---
 @st.cache_resource
 class SharedStorage:
@@ -255,7 +255,7 @@ def settingsPage(s):
 def main():
     s = storage.data
     monitor, settings = st.tabs(["Моніторинг", "Керування"])
-    with monitor: monitorPage(s)
+    with monitor: monitorPage()
     with settings: settingsPage(s)
 
 if __name__ == "__main__":
