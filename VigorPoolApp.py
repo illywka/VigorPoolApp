@@ -202,7 +202,7 @@ def queue_speed_command(is_slow):
 
 @st.fragment(run_every=1)
 def monitorPage():
-    if s is None: s = storage.data
+    s = storage.data
     if s is None:
         s = { "battery": "--", "temp": 0, "in_watts": 0, "out_watts": 0, "time_left": 0, "is_charging": False, "fast_mode": False }
         is_loading = True
