@@ -124,7 +124,7 @@ def worker_tuya():
 
                 # Сповіщення
                 is_fresh = (curr_time - storage.last_update) < 15 
-                has_power = (new_s['in_watts'] > 5)
+                has_power = (new_s['in_watts'] > 405)
                 is_now_online = has_power and is_fresh
                 
                 if storage.was_online is None:
