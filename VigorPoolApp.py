@@ -173,13 +173,13 @@ def worker_telegram():
                         if "/status" in text or "статус" in text or "start" in text:
                             s = storage.data
                             upd = time.strftime("%H:%M:%S", time.localtime(storage.last_update))
-                            q_msg = "\n⏳ Команда в черзі" if storage.pending_cmd else ""
                             reply = (
                                 f"🔋 Статус\n━━━━━━━━\n"
                                 f"Батарея: {s['battery']}%\n"
-                                f"🟢 Вхід: `{s['in_watts']} W`\n"
-                                f"🔌 Вихід: `{s['out_watts']} W`\n"
-                                f"🕒 {upd}{q_msg}"
+                                f"🟢 Вхід: {s['in_watts']} W\n"
+                                f"🔌 Вихід: {s['out_watts']} W\n"
+                                f"Часу залишилось: {s['time_left']}"
+                                f"Оновлено о {upd}"
                             )
                             send_telegram_bg(reply, target_id=cid)
             time.sleep(1)
