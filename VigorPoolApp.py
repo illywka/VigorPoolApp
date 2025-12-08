@@ -137,7 +137,7 @@ def worker_tuya():
                         storage.was_online = is_now_online
                         storage.zero_counter = 0
                         if is_now_online:
-                            send_telegram_bg(f"Світло Є!{new_s['in_watts']}")
+                            send_telegram_bg(f"Світло Є!")
                         else:
                             send_telegram_bg(f"Зарядка закінчилась. ({new_s['battery']}%)")
 
