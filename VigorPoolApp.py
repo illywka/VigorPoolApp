@@ -141,9 +141,9 @@ def worker_tuya():
                         else:
                             send_telegram_bg(f"Зарядка закінчилась. ({new_s['battery']}%)")
 
-            time.sleep(5)
+            time.sleep(30)
         except Exception as e:
-            time.sleep(5)
+            time.sleep(30)
 
 # --- 4. ПОТІК 2: TELEGRAM ---
 def worker_telegram():
