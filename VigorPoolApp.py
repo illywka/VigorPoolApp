@@ -93,8 +93,8 @@ def worker_tuya():
                     # Значення змінилось - все ок, оновлюємо таймер
                     storage.last_in_val = new_s['in_watts']
                     storage.last_in_change = curr_time
-                elif new_s['in_watts'] > 0 and (curr_time - storage.last_in_change) > 60:
-                    # Значення висить > 60 сек -> Скидаємо в 0
+                elif new_s['in_watts'] > 0 and (curr_time - storage.last_in_change) > 300:
+                    # Значення висить > 300 сек -> Скидаємо в 0
                     new_s['in_watts'] = 0
                     new_s['is_charging'] = False
                 
@@ -171,7 +171,7 @@ def worker_telegram():
                     if cid in allowed_list:
                         if "/status" in text or "статус" in text or "start" in text:
                             s = storage.data
-                            upd = time.strftime("%H:%M:%S", time.localtime(storage.last_update))
+                            upd = time.strftime(f"%d.%m.%Y %H:%M:%S", time.localtime(storage.last_update))
                             h = s['time_left'] // 3600
                             m = (s['time_left'] % 3600) // 60
                             display_time = f"{h}г {m:02d}хв"
@@ -180,7 +180,7 @@ def worker_telegram():
                                 f"🟢 Вхід: {s['in_watts']} W\n"
                                 f"🔌 Вихід: {s['out_watts']} W\n"
                                 f"Часу залишилось: {display_time}\n\n"
-                                f"Оновлено о {upd}"
+                                f"Оновлено {upd}"
                             )
                             send_telegram_bg(reply, target_id=cid)
             time.sleep(1)
