@@ -171,7 +171,7 @@ def worker_telegram():
                     if cid in allowed_list:
                         if "/status" in text or "статус" in text or "start" in text:
                             s = storage.data
-                            upd = time.strftime(f"%d.%m.%Y %H:%M:%S", time.localtime(storage.last_update))
+                            upd = time.strftime(f"%d.%m %H:%M:%S", time.localtime(storage.last_update))
                             h = s['time_left'] // 3600
                             m = (s['time_left'] % 3600) // 60
                             display_time = f"{h}г {m:02d}хв"
@@ -221,10 +221,17 @@ def monitorPage():
         change_ago = int(curr - storage.last_update) if storage.last_update else 0
         time_str = time.strftime("%H:%M:%S", time.localtime(storage.last_update)) if storage.last_update else "--:--"
         
-        if ping_ago > 20:
+        if ping_ago > 60:
             st.warning(f"⚠️ Втрачено зв'язок! Офлайн {ping_ago}с")
         else:
-            ago_text = "щойно" if change_ago < 2 else f"{change_ago}с тому"
+            if change_ago < 2:
+                ago_text = "щойно" 
+            elif change_ago < 60: 
+                ago_text = f"{change_ago}с тому"
+            elif change_ago < 3600:
+                ago_text = f"{change_ago // 60}хв {change_ago%60}с тому"
+            else:
+                ago_text = f"{s['time_left'] // 3600}г {change_ago // 60}хв {change_ago%60}с тому"
             if storage.pending_cmd: st.info("Очікує виконання команд...")
             st.markdown(f"<p style='text-align: center; color: gray; margin-top: -15px;'>{status_text} | {time_str} ({ago_text})</p>", unsafe_allow_html=True)
 
