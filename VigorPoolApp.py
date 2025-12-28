@@ -13,7 +13,6 @@ class SharedStorage:
     def __init__(self):
         self.data = None
         self.last_update = 0
-        self.last_heartbeat = 0
         self.telegram_offset = 0
         self.was_online = None 
         self.zero_counter = 0
@@ -37,14 +36,11 @@ def get_vigor_state(api_result):
 
     c_data = next((i['value'] for i in api_result if i['code'] == 'charged_data'), None)
     if c_data:
-        if c_data == "yAAAAFYAAAA=": 
-            s['in_watts'] = 0
-        else:
-            try:
-                raw = base64.b64decode(c_data)
-                p_in, t_full = struct.unpack('<ii', raw[:8])
+        try:
+            raw = base64.b64decode(c_data)
+            p_in, t_full = struct.unpack('<ii', raw[:8])
                 
-            except: pass
+        except: pass
 
     d_data = next((i['value'] for i in api_result if i['code'] == 'battery_parameters'), None)
     if d_data:
@@ -72,16 +68,16 @@ def send_telegram_bg(message, target_id=None):
                       data={"chat_id": chat_id, "text": message}, timeout=5)
     except: pass
 
-# --- 3. ПОТІК 1: TUYA + WATCHDOG ---
 def worker_tuya():
+    api = TuyaOpenAPI("https://openapi.tuyaeu.com", st.secrets["ACCESS_ID"], st.secrets["ACCESS_KEY"])
+    current_sleep_time = 60
     while True:
         try:
-            api = TuyaOpenAPI("https://openapi.tuyaeu.com", st.secrets["ACCESS_ID"], st.secrets["ACCESS_KEY"])
-            api.connect()
+            if not api.is_connect():
+                api.connect()
             
             res = api.get(f"/v1.0/devices/{st.secrets['DEVICE_ID']}/status")
-            storage.last_heartbeat = time.time()
-            
+            print(res['success'])
             if res['success']:
                 new_s = get_vigor_state(res['result'])
                 curr_time = time.time()
@@ -122,8 +118,12 @@ def worker_tuya():
                                 storage.pending_cmd = None
                     else: storage.pending_cmd = None
 
-                # Сповіщення
-                is_fresh = (curr_time - storage.last_update) < 15 
+                elif new_s['in_watts'] > 0 or new_s['out_watts'] > 0:
+                    current_sleep_time = 45
+                else:
+                    current_sleep_time = 120
+
+                is_fresh = (curr_time - storage.last_update) < (current_sleep_time + 20)
                 has_power = (new_s['in_watts'] > 405)
                 is_now_online = has_power and is_fresh
                 
@@ -140,8 +140,12 @@ def worker_tuya():
                             send_telegram_bg(f"Світло Є!")
                         else:
                             send_telegram_bg(f"Зарядка закінчилась. ({new_s['battery']}%)")
+            else:
+                print("Station is now offline. Sleeping 5 min.")
+                current_sleep_time = 300
 
-            time.sleep(30)
+            time.sleep(current_sleep_time)
+            
         except Exception as e:
             time.sleep(30)
 
@@ -217,23 +221,19 @@ def monitorPage():
     else:
         status_text = "⚡ Заряджається..." if s['is_charging'] else "🔋 Від батареї"
         curr = time.time()
-        ping_ago = int(curr - storage.last_heartbeat) if storage.last_heartbeat else 0
         change_ago = int(curr - storage.last_update) if storage.last_update else 0
         time_str = time.strftime("%H:%M:%S", time.localtime(storage.last_update)) if storage.last_update else "--:--"
         
-        if ping_ago > 60:
-            st.warning(f"⚠️ Втрачено зв'язок! Офлайн {ping_ago}с")
+        if change_ago < 2:
+            ago_text = "щойно" 
+        elif change_ago < 60: 
+            ago_text = f"{change_ago}с тому"
+        elif change_ago < 3600:
+            ago_text = f"{change_ago // 60}хв {change_ago%60}с тому"
         else:
-            if change_ago < 2:
-                ago_text = "щойно" 
-            elif change_ago < 60: 
-                ago_text = f"{change_ago}с тому"
-            elif change_ago < 3600:
-                ago_text = f"{change_ago // 60}хв {change_ago%60}с тому"
-            else:
-                ago_text = f"{s['time_left'] // 3600}г {change_ago // 60}хв {change_ago%60}с тому"
-            if storage.pending_cmd: st.info("Очікує виконання команд...")
-            st.markdown(f"<p style='text-align: center; color: gray; margin-top: -15px;'>{status_text} | {time_str} ({ago_text})</p>", unsafe_allow_html=True)
+            ago_text = f"{s['time_left'] // 3600}г {change_ago // 60}хв {change_ago%60}с тому"
+        if storage.pending_cmd: st.info("Очікує виконання команд...")
+        st.markdown(f"<p style='text-align: center; color: gray; margin-top: -15px;'>{status_text} | {time_str} ({ago_text})</p>", unsafe_allow_html=True)
 
         display_in, display_out = s['in_watts'], s['out_watts']
         h, m = s['time_left'] // 3600, (s['time_left'] % 3600) // 60
