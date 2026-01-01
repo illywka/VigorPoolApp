@@ -239,10 +239,11 @@ def monitorPage():
         h, m = s['time_left'] // 3600, (s['time_left'] % 3600) // 60
         display_time = f"{h}г {m:02d}хв"
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Вхід", f"{display_in} W")
     c2.metric("Вихід", f"{display_out} W")
     c3.metric("До кінця", display_time)
+    c4.metric("Темп.", f"{s['temp']}°C")
 
 def settingsPage(s):
     if s is None:
