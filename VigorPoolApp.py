@@ -253,9 +253,20 @@ def monitorPage():
     c3.metric("До кінця", display_time)
     c4.metric("Темп.", f"{s['temp']}°C")
 
+        # Вивід графіка з налаштованими кольорами
     if storage.history:
-        st.subheader("Графік потужності")
-        st.line_chart(storage.history, x="time", y=["Вхід (W)", "Вихід (W)"])
+        chart_colors = {
+            "Вхід (W)": "#00c853", 
+            "Вихід (W)": "#ff4b4b"
+        }
+        
+        st.area_chart(
+            storage.history, 
+            x="time", 
+            y=["Вхід (W)", "Вихід (W)"], 
+            color=["#00c853", "#ff4b4b"] # Список кольорів по черзі для кожної лінії
+        )
+        
 
 def settingsPage(s):
     if s is None:
