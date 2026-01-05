@@ -25,6 +25,8 @@ class SharedStorage:
         self.last_out_val = -1
         self.last_out_change = 0
 
+        self.history = []
+
 storage = SharedStorage()
 
 # --- 2. ЛОГІКА ДЕКОДУВАННЯ ---
@@ -77,12 +79,10 @@ def worker_tuya():
                 api.connect()
             
             res = api.get(f"/v1.0/devices/{st.secrets['DEVICE_ID']}/status")
-            print(res['success'])
             if res['success']:
                 new_s = get_vigor_state(res['result'])
                 curr_time = time.time()
 
-                # === ЛОГІКА "WATCHDOG" (ВБИВЦЯ ЗАЛИПАННЯ) ===
                 
                 # 1. Перевірка ВХОДУ
                 if new_s['in_watts'] != storage.last_in_val:
@@ -140,6 +140,14 @@ def worker_tuya():
                             send_telegram_bg(f"Світло Є!")
                         else:
                             send_telegram_bg(f"Зарядка закінчилась. ({new_s['battery']}%)")
+                storage.history.append({
+                    "time": time.strftime("%H:%M:%S", time.localtime(curr_time)),
+                    "Вхід (W)": new_s['in_watts'],
+                    "Вихід (W)": new_s['out_watts']
+                })
+                # Обмежуємо довжину (останні 100 записів)
+                if len(storage.history) > 100:
+                    storage.history.pop(0)
             else:
                 print("Station is now offline. Sleeping 5 min.")
                 current_sleep_time = 300
@@ -244,6 +252,10 @@ def monitorPage():
     c2.metric("Вихід", f"{display_out} W")
     c3.metric("До кінця", display_time)
     c4.metric("Темп.", f"{s['temp']}°C")
+
+    if storage.history:
+        st.subheader("Графік потужності")
+        st.line_chart(storage.history, x="time", y=["Вхід (W)", "Вихід (W)"])
 
 def settingsPage(s):
     if s is None:
