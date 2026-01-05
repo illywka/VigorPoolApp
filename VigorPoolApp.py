@@ -260,7 +260,7 @@ def monitorPage():
             "Вихід (W)": "#ff4b4b"
         }
         
-        st.area_chart(
+        st.line_chart(
             storage.history, 
             x="time", 
             y=["Вхід (W)", "Вихід (W)"], 
