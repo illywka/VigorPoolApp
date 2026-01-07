@@ -119,7 +119,7 @@ def worker_tuya():
                     else: storage.pending_cmd = None
 
                 elif new_s['in_watts'] > 0 or new_s['out_watts'] > 0:
-                    current_sleep_time = 30
+                    current_sleep_time = 20
                 else:
                     current_sleep_time = 120
 
