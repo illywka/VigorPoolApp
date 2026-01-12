@@ -49,9 +49,7 @@ def get_vigor_state(api_result):
         try:
             raw = base64.b64decode(d_data)
             p_out, _, t_empty = struct.unpack('<iii', raw[:12])
-            s['out_watts'] = p_out
-            s['in_watts'] = p_in
-            if p_in > 0 and p_in > p_out:
+            if new_s['in_watts'] > 0 and new_s['in_watts'] > new_s['out_watts']:
                 s['time_left'] = t_full
             else:
                 s['time_left'] = t_empty
@@ -102,6 +100,13 @@ def worker_tuya():
                     # Значення висить > 60 сек -> Скидаємо в 0
                     new_s['out_watts'] = 0
                 
+                new_s['out_watts'] = p_out
+                new_s['in_watts'] = p_in
+                if new_s['in_watts'] > 0 and new_s['in_watts'] > new_s['out_watts']:
+                    s['time_left'] = t_full
+                else:
+                    s['time_left'] = t_empty
+                    
                 # ============================================
 
                 if storage.data is None or storage.data != new_s:
