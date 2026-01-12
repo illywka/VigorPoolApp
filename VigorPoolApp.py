@@ -98,7 +98,7 @@ def worker_tuya():
                 if new_s['out_watts'] != storage.last_out_val:
                     storage.last_out_val = new_s['out_watts']
                     storage.last_out_change = curr_time
-                elif new_s['out_watts'] > 0 and (curr_time - storage.last_out_change) > 60:
+                elif new_s['out_watts'] > 0 and (curr_time - storage.last_out_change) > 120:
                     # Значення висить > 60 сек -> Скидаємо в 0
                     new_s['out_watts'] = 0
                 
