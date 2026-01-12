@@ -228,7 +228,7 @@ def monitorPage():
         display_in, display_out, display_time = 0, 0, "--:--"
     else:
         status_text = "⚡ Заряджається..." if s['is_charging'] else "🔋 Від батареї"
-        curr = time.time()
+        curr = time.time() + 7200
         change_ago = int(curr - storage.last_update) if storage.last_update else 0
         time_str = time.strftime("%H:%M:%S", time.localtime(storage.last_update)) if storage.last_update else "--:--"
         
