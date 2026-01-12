@@ -81,7 +81,7 @@ def worker_tuya():
             res = api.get(f"/v1.0/devices/{st.secrets['DEVICE_ID']}/status")
             if res['success']:
                 new_s = get_vigor_state(res['result'])
-                curr_time = time.time()
+                curr_time = time.time() + 7200
 
                 
                 # 1. Перевірка ВХОДУ
