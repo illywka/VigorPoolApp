@@ -136,6 +136,56 @@ def monitorPage():
         st.line_chart(storage.history, x="time", y=["Вхід (W)", "Вихід (W)"], color=["#00c853", "#ff4b4b"])
 
 # Решта функцій (main, settingsPage, start_threads) залишаються як були
+# --- 4. ПОТІК 2: TELEGRAM ---
+def worker_telegram():
+    while True:
+        try:
+            if storage.data is None:
+                time.sleep(2)
+                continue
+
+            raw_users = st.secrets.get("ALLOWED_USERS", st.secrets["CHAT_ID"])
+            allowed_list = [u.strip() for u in raw_users.split(",")] 
+            token = st.secrets["BOT_TOKEN"]
+            url = f"https://api.telegram.org/bot{token}/getUpdates"
+            params = {"offset": storage.telegram_offset + 1, "timeout": 10}
+            
+            resp = requests.get(url, params=params, timeout=15).json()
+
+            if resp.get('ok') and resp.get('result'):
+                for update in resp['result']:
+                    storage.telegram_offset = update['update_id']
+                    msg = update.get('message', {})
+                    text = msg.get('text', '').lower()
+                    cid = str(msg.get('chat', {}).get('id', ''))
+                    
+                    if cid in allowed_list:
+                        if "/status" in text or "статус" in text or "start" in text:
+                            s = storage.data
+                            upd = time.strftime(f"%d.%m %H:%M:%S", time.localtime(storage.last_update))
+                            h = s['time_left'] // 3600
+                            m = (s['time_left'] % 3600) // 60
+                            display_time = f"{h}г {m:02d}хв"
+                            reply = (
+                                f"Батарея: {s['battery']}%\n\n"
+                                f"🟢 Вхід: {s['in_watts']} W\n"
+                                f"🔌 Вихід: {s['out_watts']} W\n"
+                                f"Часу залишилось: {display_time}\n\n"
+                                f"Оновлено {upd}"
+                            )
+                            send_telegram_bg(reply, target_id=cid)
+            time.sleep(1)
+        except:
+            time.sleep(5)
+
+def send_telegram_bg(message, target_id=None):
+    try:
+        token = st.secrets["BOT_TOKEN"]
+        chat_id = target_id if target_id else st.secrets["CHAT_ID"]
+        requests.post(f"https://api.telegram.org/bot{token}/sendMessage", 
+                      data={"chat_id": chat_id, "text": message}, timeout=5)
+    except: pass
+
 
 @st.cache_resource
 def start_threads():
