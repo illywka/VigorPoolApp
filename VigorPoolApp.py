@@ -47,9 +47,29 @@ def get_vigor_state(api_result):
     d_data = next((i['value'] for i in api_result if i['code'] == 'battery_parameters'), None)
     if d_data:
         try:
+            curr_time = time.time() + 7200
             raw = base64.b64decode(d_data)
             p_out, _, t_empty = struct.unpack('<iii', raw[:12])
-            if new_s['in_watts'] > 0 and new_s['in_watts'] > new_s['out_watts']:
+                        
+            # 1. Перевірка ВХОДУ
+            if s['in_watts'] != storage.last_in_val:
+                # Значення змінилось - все ок, оновлюємо таймер
+                storage.last_in_val = s['in_watts']
+                storage.last_in_change = curr_time
+            elif s['in_watts'] > 0 and (curr_time - storage.last_in_change) > 300:
+                # Значення висить > 300 сек -> Скидаємо в 0
+                s['in_watts'] = 0
+                s['is_charging'] = False
+                
+            # 2. Перевірка ВИХОДУ
+            if s['out_watts'] != storage.last_out_val:
+                storage.last_out_val = s['out_watts']
+                storage.last_out_change = curr_time
+            elif s['out_watts'] > 0 and (curr_time - storage.last_out_change) > 120:
+                # Значення висить > 60 сек -> Скидаємо в 0
+                s['out_watts'] = 0   
+                
+            if s['in_watts'] > 0 and s['in_watts'] > s['out_watts']:
                 s['time_left'] = t_full
             else:
                 s['time_left'] = t_empty
@@ -81,31 +101,7 @@ def worker_tuya():
                 new_s = get_vigor_state(res['result'])
                 curr_time = time.time() + 7200
 
-                
-                # 1. Перевірка ВХОДУ
-                if new_s['in_watts'] != storage.last_in_val:
-                    # Значення змінилось - все ок, оновлюємо таймер
-                    storage.last_in_val = new_s['in_watts']
-                    storage.last_in_change = curr_time
-                elif new_s['in_watts'] > 0 and (curr_time - storage.last_in_change) > 300:
-                    # Значення висить > 300 сек -> Скидаємо в 0
-                    new_s['in_watts'] = 0
-                    new_s['is_charging'] = False
-                
-                # 2. Перевірка ВИХОДУ
-                if new_s['out_watts'] != storage.last_out_val:
-                    storage.last_out_val = new_s['out_watts']
-                    storage.last_out_change = curr_time
-                elif new_s['out_watts'] > 0 and (curr_time - storage.last_out_change) > 120:
-                    # Значення висить > 60 сек -> Скидаємо в 0
-                    new_s['out_watts'] = 0
-                
-                new_s['out_watts'] = p_out
-                new_s['in_watts'] = p_in
-                if new_s['in_watts'] > 0 and new_s['in_watts'] > new_s['out_watts']:
-                    s['time_left'] = t_full
-                else:
-                    s['time_left'] = t_empty
+
                     
                 # ============================================
 
