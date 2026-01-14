@@ -68,9 +68,9 @@ def worker_tuya():
             res = api.get(f"/v1.0/devices/{st.secrets['DEVICE_ID']}/status")
             if res.get('success'):
                 new_s = get_vigor_state(res['result'])
-                curr_time = time.time() # Працюємо в системному UTC
+                curr_time = time.time() # Системний час для логіки
 
-                # === WATCHDOG (ВБИВЦЯ ЗАЛИПАННЯ) ===
+                # === 1. WATCHDOG (ВБИВЦЯ ЗАЛИПАННЯ) ===
                 if new_s['in_watts'] != storage.last_in_val:
                     storage.last_in_val = new_s['in_watts']
                     storage.last_in_change = curr_time
@@ -83,11 +83,32 @@ def worker_tuya():
                 elif new_s['out_watts'] > 0 and (curr_time - storage.last_out_change) > 120:
                     new_s['out_watts'] = 0
 
-                # Збереження даних
+                # === 2. ЛОГІКА СПОВІЩЕНЬ (Світло Є / Немає) ===
+                # Визначаємо статус "Світло є" (якщо вхід > 405 Вт або просто > 5 Вт для точності)
+                has_power = (new_s['in_watts'] > 405) 
+                
+                if storage.was_online is None:
+                    storage.was_online = has_power
+                elif has_power != storage.was_online:
+                    # Якщо світло зникло, чекаємо 2 цикли (zero_counter), щоб уникнути помилкових спрацювань
+                    if not has_power:
+                        storage.zero_counter += 1
+                    else:
+                        storage.zero_counter = 0
+                    
+                    if has_power or storage.zero_counter >= 2:
+                        storage.was_online = has_power
+                        storage.zero_counter = 0
+                        if has_power:
+                            send_telegram_bg("⚡ Світло Є!")
+                        else:
+                            send_telegram_bg(f"🪫 Зарядка закінчилась або світло зникло. ({new_s['battery']}%)")
+
+                # === 3. ЗБЕРЕЖЕННЯ ДАНИХ ТА ГРАФІК ===
                 storage.data = new_s
                 storage.last_update = curr_time
 
-                # Історія для графіка
+                # Додаємо в історію з київським часом (+2 год)
                 storage.history.append({
                     "time": time.strftime("%H:%M:%S", time.localtime(curr_time + 7200)),
                     "Вхід (W)": new_s['in_watts'],
@@ -95,13 +116,13 @@ def worker_tuya():
                 })
                 if len(storage.history) > 100: storage.history.pop(0)
 
-                # Інтервал (Адаптивний)
+                # === 4. АДАПТИВНИЙ СОН ===
                 sleep_time = 20 if (new_s['in_watts'] > 0 or new_s['out_watts'] > 0) else 120
             else:
-                sleep_time = 300 # Офлайн
+                sleep_time = 300 # Якщо станція офлайн, спимо 5 хв
             
             time.sleep(sleep_time)
-        except:
+        except Exception as e:
             time.sleep(30)
 
 # --- 5. ФРОНТЕНД ---
