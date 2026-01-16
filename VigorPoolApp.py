@@ -5,6 +5,7 @@ import struct
 import time
 import requests
 import threading
+import pandas as pd
 
 st.set_page_config(page_title="VigorMonitor", page_icon="⚡", layout="centered")
 
@@ -154,7 +155,8 @@ def monitorPage():
     c4.metric("Темп.", f"{s['temp']}°C")
 
     if storage.history:
-        st.line_chart(storage.history, x="time", y=["Вхід (W)", "Вихід (W)"], color=["#00c853", "#ff4b4b"])
+        df = pd.DataFrame(storage.history)
+        st.line_chart(df, x="time", y=["Вхід (W)", "Вихід (W)"], color=["#00c853", "#ff4b4b"])
 
 # Решта функцій (main, settingsPage, start_threads) залишаються як були
 # --- 4. ПОТІК 2: TELEGRAM ---
