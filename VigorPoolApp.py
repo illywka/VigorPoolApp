@@ -110,7 +110,7 @@ def worker_tuya():
 
                 # Додаємо в історію з київським часом (+2 год)
                 storage.history.append({
-                    "time": time.strftime("%H:%M:%S", time.localtime(curr_time + 7200)),
+                    "time": pd.to_datetime(curr_time + 7200, unit='s'),
                     "Вхід (W)": new_s['in_watts'],
                     "Вихід (W)": new_s['out_watts']
                 })
