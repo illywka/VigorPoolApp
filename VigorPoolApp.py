@@ -74,7 +74,7 @@ def worker_tuya():
                 if new_s['in_watts'] != storage.last_in_val:
                     storage.last_in_val = new_s['in_watts']
                     storage.last_in_change = curr_time
-                elif new_s['in_watts'] > 0 and (curr_time - storage.last_in_change) > 300:
+                elif new_s['in_watts'] > 0 and (curr_time - storage.last_in_change) > 1200:
                     new_s['in_watts'] = 0
 
                 if new_s['out_watts'] != storage.last_out_val:
@@ -119,7 +119,7 @@ def worker_tuya():
                 # === 4. АДАПТИВНИЙ СОН ===
                 sleep_time = 20 if (new_s['in_watts'] > 0 or new_s['out_watts'] > 0) else 120
             else:
-                sleep_time = 300 # Якщо станція офлайн, спимо 5 хв
+                sleep_time = 600 # Якщо станція офлайн, спимо 10 хв
             
             time.sleep(sleep_time)
         except Exception as e:
