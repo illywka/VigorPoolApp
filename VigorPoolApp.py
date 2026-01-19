@@ -54,8 +54,7 @@ def get_vigor_state(api_result):
             # Вибір часу (до повного або до нуля)
             s['time_left'] = t_full if p_in > p_out else t_empty
         except: pass
-    
-    if s['battery'] == 100: s['in_watts'] = 0
+
     s['is_charging'] = s['in_watts'] > 5
     return s
 
