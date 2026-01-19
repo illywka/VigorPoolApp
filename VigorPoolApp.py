@@ -117,7 +117,7 @@ def worker_tuya():
                 if len(storage.history) > 150: storage.history.pop(0)
 
                 # === 4. АДАПТИВНИЙ СОН ===
-                sleep_time = 10 if (new_s['in_watts'] > 0 or new_s['out_watts'] > 0) else 120
+                sleep_time = 15 if (new_s['in_watts'] > 0 or new_s['out_watts'] > 0) else 120
             else:
                 sleep_time = 600 # Якщо станція офлайн, спимо 10 хв
             
